@@ -1,10 +1,7 @@
 "use client";
-
-export const dynamic = "force-dynamic";
-
 import dynamic from "next/dynamic";
 
-// Dynamic import â€” keeps ZXing bundle (~150KB) out of the main page chunk
+// Dynamic import Ã¢â‚¬â€ keeps ZXing bundle (~150KB) out of the main page chunk
 const DiscScanner = dynamic(() => import("@/components/DiscScanner"), {
   ssr: false,
   loading: () => (
