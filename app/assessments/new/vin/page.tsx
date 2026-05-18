@@ -17,7 +17,7 @@ function isValidVinFormat(vin: string): boolean {
 // Letter/number map - how people ACTUALLY say each character
 // ============================================================
 const TOKEN_MAP: Record<string, string> = {
-  // Letters — natural English pronunciation
+  // Letters â€” natural English pronunciation
   "A": "A", "AY": "A", "AYE": "A",
   "B": "B", "BE": "B", "BEE": "B", "BEEN": "B",
   "C": "C", "SEE": "C", "SEA": "C", "CEE": "C",
@@ -32,7 +32,7 @@ const TOKEN_MAP: Record<string, string> = {
   "L": "L", "EL": "L", "ELL": "L",
   "M": "M", "EM": "M",
   "N": "N", "EN": "N",
-  "O": "O", "OWE": "O",
+  "OWE": "0",
   "P": "P", "PEE": "P", "PE": "P",
   "Q": "Q", "CUE": "Q", "QUEUE": "Q", "QU": "Q",
   "R": "R", "AR": "R", "ARE": "R", "ARR": "R",
@@ -45,7 +45,7 @@ const TOKEN_MAP: Record<string, string> = {
   "Y": "Y", "WHY": "Y", "WAI": "Y", "WYE": "Y",
   "Z": "Z", "ZEE": "Z", "ZED": "Z",
 
-  // Numbers — spoken as words
+  // Numbers â€” spoken as words
   "0": "0", "ZERO": "0", "OH": "0", "NIL": "0", "NOUGHT": "0", "O": "0",
   "1": "1", "ONE": "1", "WON": "1",
   "2": "2", "TWO": "2", "TO": "2", "TOO": "2",
@@ -68,7 +68,7 @@ const TOKEN_MAP: Record<string, string> = {
 };
 
 // Note: "O" is mapped to "0" because VINs cannot contain letter O (only digit 0).
-// Same logic for I→1, Q→0 below.
+// Same logic for Iâ†’1, Qâ†’0 below.
 
 function normalizeVinTranscript(text: string): string {
   if (!text) return "";
@@ -82,21 +82,21 @@ function normalizeVinTranscript(text: string): string {
   let result = "";
   for (const token of tokens) {
     if (TOKEN_MAP[token]) {
-      // Known letter/number spelling → single char
+      // Known letter/number spelling â†’ single char
       result += TOKEN_MAP[token];
     } else if (token.length === 1 && /[A-Z0-9]/.test(token)) {
-      // Single character → use as is
+      // Single character â†’ use as is
       result += token;
     } else if (/^\d+$/.test(token)) {
-      // Multi-digit number → keep all digits ("547" stays "547")
+      // Multi-digit number â†’ keep all digits ("547" stays "547")
       result += token;
     } else if (/^[A-Z]+$/.test(token)) {
-      // All-letter blob like "KMHB" → split into individual chars
+      // All-letter blob like "KMHB" â†’ split into individual chars
       for (const char of token) {
         result += char;
       }
     } else if (/^[A-Z0-9]+$/.test(token)) {
-      // Mixed alphanumeric blob like "KMH51" → keep as is
+      // Mixed alphanumeric blob like "KMH51" â†’ keep as is
       result += token;
     }
     // else: unknown word, skip
@@ -318,9 +318,9 @@ export default function VinEntryPage() {
   return (
     <div className="min-h-screen bg-bg text-white flex flex-col">
       <div className="px-4 py-3 border-b border-border flex items-center gap-3 safe-top">
-        <button onClick={() => { stopListening(); router.back(); }} className="haptic-tap text-white/60 hover:text-white text-sm">← Back</button>
+        <button onClick={() => { stopListening(); router.back(); }} className="haptic-tap text-white/60 hover:text-white text-sm">â† Back</button>
         <div className="flex-1" />
-        <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">Step 1 of 5 · VIN</div>
+        <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">Step 1 of 5 Â· VIN</div>
       </div>
 
       <div className="flex-1 px-4 py-6 max-w-md mx-auto w-full">
@@ -369,11 +369,11 @@ export default function VinEntryPage() {
             {status === "listening" && (
               <span className="text-red-400 flex items-center justify-center gap-2">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
-                Live · tap to stop
+                Live Â· tap to stop
               </span>
             )}
             {status === "decoding" && <span className="text-gold">Looking up vehicle</span>}
-            {status === "decoded" && <span className="text-emerald-400">✓ Vehicle identified</span>}
+            {status === "decoded" && <span className="text-emerald-400">âœ“ Vehicle identified</span>}
             {(status === "idle" || status === "error") && (
               <span className="text-white/40">Tap to start live transcription</span>
             )}
@@ -435,7 +435,7 @@ export default function VinEntryPage() {
               Just read each character one at a time:
             </div>
             <div className="font-mono text-white/80 leading-relaxed">
-              &ldquo;K — M — H — B — T — five — one — D — R — six — U — five — four — seven — four — zero — two&rdquo;
+              &ldquo;K â€” M â€” H â€” B â€” T â€” five â€” one â€” D â€” R â€” six â€” U â€” five â€” four â€” seven â€” four â€” zero â€” two&rdquo;
             </div>
             <div className="text-white/40 mt-2 text-[11px] leading-relaxed">
               Pause briefly between characters. Numbers can be spoken as words (&ldquo;five&rdquo;) or digits (&ldquo;5&rdquo;).
