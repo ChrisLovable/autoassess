@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ParsedDisc } from "@/lib/disc";
 
@@ -20,15 +20,7 @@ function MonoField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen bg-bg flex items-center justify-center text-white/40 font-mono text-xs uppercase tracking-wider">
-      Loading...
-    </div>
-  );
-}
-
-function VehicleContent() {
+export default function VehiclePage() {
   const router = useRouter();
   const params = useSearchParams();
   const isManual = params.get("manual") === "1";
@@ -51,14 +43,26 @@ function VehicleContent() {
     setLoading(false);
   }, []);
 
-  if (loading) return <LoadingFallback />;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-bg flex items-center justify-center text-white/40 font-mono text-xs uppercase tracking-wider">
+        Loading...
+      </div>
+    );
+  }
 
+  // If no parsed data and not manual mode → decode failed silently somewhere
+  // Show empty form so user can fill in by hand
   const data: Partial<ParsedDisc> = parsed || {};
 
   return (
     <div className="min-h-screen bg-bg text-white pb-32">
+      {/* Header */}
       <div className="px-4 py-3 border-b border-border flex items-center gap-3 safe-top">
-        <button onClick={() => router.back()} className="haptic-tap text-white/60 hover:text-white text-sm">
+        <button
+          onClick={() => router.back()}
+          className="haptic-tap text-white/60 hover:text-white text-sm"
+        >
           ← Back
         </button>
         <div className="flex-1" />
@@ -68,6 +72,7 @@ function VehicleContent() {
       </div>
 
       <div className="px-4 pt-6 max-w-md mx-auto">
+        {/* Status banner */}
         {parsed ? (
           <div className="mb-6 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
             <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
@@ -77,7 +82,9 @@ function VehicleContent() {
             </div>
             <div className="flex-1">
               <div className="font-display font-semibold">Disc read successfully</div>
-              <div className="text-xs text-white/60 mt-0.5">Confirm details below before continuing</div>
+              <div className="text-xs text-white/60 mt-0.5">
+                Confirm details below before continuing
+              </div>
             </div>
           </div>
         ) : isManual ? (
@@ -89,7 +96,9 @@ function VehicleContent() {
             </div>
             <div className="flex-1">
               <div className="font-display font-semibold">Manual entry</div>
-              <div className="text-xs text-white/60 mt-0.5">Fill in vehicle details by hand</div>
+              <div className="text-xs text-white/60 mt-0.5">
+                Fill in vehicle details by hand
+              </div>
             </div>
           </div>
         ) : (
@@ -102,17 +111,27 @@ function VehicleContent() {
             </div>
             <div className="flex-1">
               <div className="font-display font-semibold">No disc data found</div>
-              <div className="text-xs text-white/60 mt-0.5">Please go back and rescan or use manual entry</div>
+              <div className="text-xs text-white/60 mt-0.5">
+                Please go back and rescan or use manual entry
+              </div>
             </div>
           </div>
         )}
 
+        {/* Primary identifiers */}
         <div className="bg-surface border border-border rounded-2xl p-5 mb-4">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-gold mb-3">Vehicle</div>
-          <div className="font-display text-2xl font-bold leading-tight">{data.make || "—"}</div>
-          <div className="font-display text-base text-white/70 mt-1">{data.model || "—"}</div>
+          <div className="text-[10px] font-mono uppercase tracking-wider text-gold mb-3">
+            Vehicle
+          </div>
+          <div className="font-display text-2xl font-bold leading-tight">
+            {data.make || "—"}
+          </div>
+          <div className="font-display text-base text-white/70 mt-1">
+            {data.model || "—"}
+          </div>
         </div>
 
+        {/* Reg & VIN */}
         <div className="grid grid-cols-2 gap-3 mb-4">
           <div className="bg-surface border border-border rounded-xl p-4">
             <MonoField label="Registration" value={data.registrationNumber || ""} />
@@ -122,29 +141,48 @@ function VehicleContent() {
           </div>
         </div>
 
+        {/* VIN */}
         <div className="bg-surface border border-border rounded-xl p-4 mb-4">
           <MonoField label="VIN / Chassis" value={data.vin || ""} />
         </div>
 
+        {/* Other */}
         <div className="bg-surface border border-border rounded-xl divide-y divide-border">
-          <div className="p-4"><MonoField label="Engine number" value={data.engineNumber || ""} /></div>
-          <div className="p-4"><MonoField label="Body type" value={data.description || ""} /></div>
-          <div className="p-4"><MonoField label="Licence expires" value={data.expiryDate || ""} /></div>
+          <div className="p-4">
+            <MonoField label="Engine number" value={data.engineNumber || ""} />
+          </div>
+          <div className="p-4">
+            <MonoField label="Body type" value={data.description || ""} />
+          </div>
+          <div className="p-4">
+            <MonoField label="Licence expires" value={data.expiryDate || ""} />
+          </div>
         </div>
 
+        {/* Disc photo thumbnail (if we have it) */}
         {discImage && (
           <div className="mt-4 bg-surface border border-border rounded-xl p-4">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-3">Captured disc</div>
+            <div className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-3">
+              Captured disc
+            </div>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={discImage} alt="Captured licence disc" className="w-full rounded-lg" />
+            <img
+              src={discImage}
+              alt="Captured licence disc"
+              className="w-full rounded-lg"
+            />
           </div>
         )}
       </div>
 
+      {/* Bottom action bar */}
       <div className="fixed bottom-0 inset-x-0 bg-bg/95 backdrop-blur-sm border-t border-border safe-bottom">
         <div className="px-4 py-4 max-w-md mx-auto flex flex-col gap-2">
           <button
-            onClick={() => alert("Next step (incident context) coming in v0.4")}
+            onClick={() => {
+              // TODO: navigate to next step (incident context) once built
+              alert("Next step (incident context) coming in v0.4");
+            }}
             className="haptic-tap w-full bg-gold text-black font-semibold py-3.5 rounded-xl text-base"
           >
             Confirm &amp; continue
@@ -158,13 +196,5 @@ function VehicleContent() {
         </div>
       </div>
     </div>
-  );
-}
-
-export default function VehiclePage() {
-  return (
-    <Suspense fallback={<LoadingFallback />}>
-      <VehicleContent />
-    </Suspense>
   );
 }
