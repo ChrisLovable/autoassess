@@ -7,8 +7,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { vinToYear, type ParsedDisc } from "@/lib/disc";
 
 const STORAGE_KEY_PARSED = "autoassess:parsedDisc";
-const STORAGE_KEY_IMAGE = "autoassess:lastDiscImage";
-const STORAGE_KEY_FORM = "autoassess:vehicleForm";
 const STORAGE_KEY_METHOD = "autoassess:parseMethod";
 
 type FormData = {
@@ -18,210 +16,125 @@ type FormData = {
   vin: string;
   registrationNumber: string;
   colour: string;
-};
-
-const EMPTY_FORM: FormData = {
-  make: "",
-  model: "",
-  year: "",
-  vin: "",
-  registrationNumber: "",
-  colour: "",
+  bodyType: string;
 };
 
 // ============================================================
-// Voice-enabled field â€” MediaRecorder + ElevenLabs Scribe
+// VoiceField — voice-enabled input with inline mic button
 // ============================================================
-
-type VoiceFieldStatus = "idle" | "recording" | "processing" | "error";
-
 function VoiceField({
   label,
   value,
   onChange,
-  placeholder = "",
   uppercase = false,
+  monospace = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
-  placeholder?: string;
   uppercase?: boolean;
+  monospace?: boolean;
 }) {
-  const [status, setStatus] = useState<VoiceFieldStatus>("idle");
-  const [errMsg, setErrMsg] = useState<string>("");
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const [err, setErr] = useState("");
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const chunksRef = useRef<Blob[]>([]);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const cleanupStream = useCallback(() => {
+  const cleanup = useCallback(() => {
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     }
   }, []);
 
-  const stopRecording = useCallback(() => {
+  const stop = useCallback(() => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
       mediaRecorderRef.current.stop();
     }
+    setRecording(false);
   }, []);
 
-  const startRecording = useCallback(async () => {
-    setErrMsg("");
-    audioChunksRef.current = [];
-
-    if (typeof navigator === "undefined" || !navigator.mediaDevices) {
-      setStatus("error");
-      setErrMsg("Microphone not available");
-      return;
-    }
-
+  const start = useCallback(async () => {
+    setErr("");
+    chunksRef.current = [];
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       streamRef.current = stream;
-
-      const mimeTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", ""];
-      let mimeType = "";
-      for (const m of mimeTypes) {
-        if (m === "" || MediaRecorder.isTypeSupported(m)) {
-          mimeType = m;
-          break;
-        }
+      const mimes = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", ""];
+      let mime = "";
+      for (const m of mimes) {
+        if (m === "" || MediaRecorder.isTypeSupported(m)) { mime = m; break; }
       }
-
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-
-      recorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
+      const recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       recorder.onstop = async () => {
-        cleanupStream();
-        if (audioChunksRef.current.length === 0) {
-          setStatus("idle");
-          return;
-        }
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: recorder.mimeType || "audio/webm",
-        });
-        if (audioBlob.size < 1000) {
-          setStatus("idle");
-          return;
-        }
-
-        setStatus("processing");
+        cleanup();
+        if (chunksRef.current.length === 0) return;
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        if (blob.size < 1000) return;
+        setTranscribing(true);
         try {
-          const formData = new FormData();
-          formData.append("audio", audioBlob, "recording.webm");
-          const response = await fetch("/api/transcribe", { method: "POST", body: formData });
-          const result = (await response.json()) as { text?: string; error?: string };
-
-          if (!response.ok || result.error) {
-            setStatus("error");
-            setErrMsg(result.error || "Transcription failed");
-            setTimeout(() => setStatus("idle"), 2500);
-            return;
+          const fd = new FormData();
+          fd.append("audio", blob, "field.webm");
+          const r = await fetch("/api/transcribe", { method: "POST", body: fd });
+          const j = (await r.json()) as { text?: string; error?: string };
+          if (!r.ok || j.error) { setErr(j.error || "Transcription failed"); }
+          else {
+            let t = (j.text || "").trim().replace(/[.,!?;:]$/, "");
+            if (uppercase) t = t.toUpperCase().replace(/[^A-Z0-9 ]/g, "").trim();
+            onChange(t);
           }
-
-          const text = (result.text || "").trim();
-          if (text) {
-            const cleaned = uppercase
-              ? text.toUpperCase().replace(/\s+/g, " ").trim()
-              : text;
-            onChange(value ? `${value} ${cleaned}` : cleaned);
-          }
-          setStatus("idle");
         } catch (e) {
-          setStatus("error");
-          setErrMsg(e instanceof Error ? e.message : "Network error");
-          setTimeout(() => setStatus("idle"), 2500);
+          setErr(e instanceof Error ? e.message : "Network error");
+        } finally {
+          setTranscribing(false);
         }
       };
-
-      recorder.onerror = () => {
-        setStatus("error");
-        setErrMsg("Recording error");
-        cleanupStream();
-        setTimeout(() => setStatus("idle"), 2500);
-      };
-
       mediaRecorderRef.current = recorder;
       recorder.start();
-      setStatus("recording");
-    } catch (err) {
-      setStatus("error");
-      const e = err as { name?: string };
-      setErrMsg(e.name === "NotAllowedError" ? "Microphone permission denied" : "Could not start microphone");
-      setTimeout(() => setStatus("idle"), 2500);
+      setRecording(true);
+    } catch (e) {
+      const err = e as { name?: string };
+      setErr(err.name === "NotAllowedError" ? "Microphone permission denied" : "Could not start mic");
     }
-  }, [cleanupStream, onChange, uppercase, value]);
+  }, [cleanup, onChange, uppercase]);
 
-  const toggle = useCallback(() => {
-    if (status === "recording") stopRecording();
-    else if (status === "idle") startRecording();
-  }, [status, startRecording, stopRecording]);
+  const toggle = () => (recording ? stop() : start());
 
-  useEffect(() => {
-    return () => {
-      if (mediaRecorderRef.current?.state === "recording") {
-        mediaRecorderRef.current.stop();
-      }
-      cleanupStream();
-    };
-  }, [cleanupStream]);
+  useEffect(() => () => { if (mediaRecorderRef.current?.state === "recording") mediaRecorderRef.current.stop(); cleanup(); }, [cleanup]);
 
   return (
-    <div className="bg-surface border border-border rounded-xl p-4">
-      <div className="flex items-center justify-between mb-2 min-h-[14px]">
-        <div className="text-[10px] font-mono uppercase tracking-wider text-white/40">{label}</div>
-        {status === "recording" && (
-          <div className="flex items-center gap-1.5">
-            <div className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-            <div className="text-[10px] font-mono uppercase tracking-wider text-red-400">Recording</div>
-          </div>
-        )}
-        {status === "processing" && (
-          <div className="flex items-center gap-1.5">
-            <div className="w-3 h-3 rounded-full border border-gold/30 border-t-gold animate-spin" />
-            <div className="text-[10px] font-mono uppercase tracking-wider text-gold">Transcribing</div>
-          </div>
-        )}
-        {status === "error" && errMsg && (
-          <div className="text-[10px] font-mono uppercase tracking-wider text-red-400 truncate ml-2">
-            {errMsg}
-          </div>
-        )}
+    <div>
+      <div className="flex items-center justify-between mb-1.5">
+        <label className="text-[10px] font-mono uppercase tracking-wider text-white/40">{label}</label>
+        {err && <span className="text-[9px] text-red-400">{err}</span>}
       </div>
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-2 bg-surface border border-border rounded-xl px-3 py-2.5">
         <input
           type="text"
           value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="flex-1 bg-transparent border-none outline-none font-mono text-sm text-white placeholder:text-white/30"
-          autoCorrect={uppercase ? "off" : "on"}
-          autoCapitalize={uppercase ? "characters" : "sentences"}
+          onChange={(e) => onChange(uppercase ? e.target.value.toUpperCase() : e.target.value)}
+          className={`flex-1 bg-transparent outline-none text-white text-base ${monospace ? "font-mono tracking-wider" : ""}`}
+          autoCorrect="off"
+          autoCapitalize={uppercase ? "characters" : "off"}
         />
         <button
           onClick={toggle}
-          type="button"
-          disabled={status === "processing"}
-          className={`haptic-tap flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center transition-all ${
-            status === "recording"
-              ? "bg-red-500/20 border border-red-500/50"
-              : status === "processing"
-              ? "bg-gold/10 border border-gold/30 opacity-50"
-              : "bg-gold/10 border border-gold/30 hover:bg-gold/20"
+          disabled={transcribing}
+          className={`haptic-tap shrink-0 w-9 h-9 rounded-lg flex items-center justify-center ${
+            recording ? "bg-red-500/20 border border-red-500 animate-pulse"
+            : transcribing ? "bg-gold/10 opacity-60"
+            : "bg-gold/15 border border-gold/30 hover:bg-gold/25"
           }`}
-          aria-label={status === "recording" ? "Stop recording" : "Start voice input"}
         >
-          {status === "recording" ? (
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="#EF4444">
-              <rect x="6" y="6" width="12" height="12" rx="1.5" />
-            </svg>
+          {recording ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="#EF4444"><rect x="6" y="6" width="12" height="12" rx="2" /></svg>
+          ) : transcribing ? (
+            <div className="w-4 h-4 rounded-full border-2 border-gold/40 border-t-gold animate-spin" />
           ) : (
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
@@ -237,222 +150,157 @@ function VoiceField({
 }
 
 // ============================================================
-// Inner content
+// Main vehicle confirmation page
 // ============================================================
-
 function VehicleContent() {
   const router = useRouter();
   const params = useSearchParams();
   const isManual = params.get("manual") === "1";
 
   const [parsed, setParsed] = useState<ParsedDisc | null>(null);
-  const [parseMethod, setParseMethod] = useState<string>("");
-  const [discImage, setDiscImage] = useState<string | null>(null);
-  const [form, setForm] = useState<FormData>(EMPTY_FORM);
+  const [method, setMethod] = useState<string>("");
   const [loading, setLoading] = useState(true);
+
+  const [form, setForm] = useState<FormData>({
+    make: "",
+    model: "",
+    year: "",
+    vin: "",
+    registrationNumber: "",
+    colour: "",
+    bodyType: "",
+  });
 
   useEffect(() => {
     try {
       const stored = sessionStorage.getItem(STORAGE_KEY_PARSED);
+      const storedMethod = sessionStorage.getItem(STORAGE_KEY_METHOD) || "";
+      setMethod(storedMethod);
       if (stored) {
         const p = JSON.parse(stored) as ParsedDisc;
         setParsed(p);
         setForm({
           make: p.make || "",
           model: p.model || "",
-          year: p.year || "",
+          year: p.year || (p.vin ? vinToYear(p.vin) : ""),
           vin: p.vin || "",
           registrationNumber: p.registrationNumber || "",
           colour: p.colour || "",
+          bodyType: p.bodyType || "",
         });
-      } else {
-        const existingForm = sessionStorage.getItem(STORAGE_KEY_FORM);
-        if (existingForm) {
-          setForm(JSON.parse(existingForm) as FormData);
-        }
       }
-      const method = sessionStorage.getItem(STORAGE_KEY_METHOD);
-      if (method) setParseMethod(method);
-      const img = sessionStorage.getItem(STORAGE_KEY_IMAGE);
-      if (img) setDiscImage(img);
-    } catch {}
-    setLoading(false);
-  }, []);
-
-  useEffect(() => {
-    if (loading) return;
-    try {
-      sessionStorage.setItem(STORAGE_KEY_FORM, JSON.stringify(form));
-    } catch {}
-  }, [form, loading]);
-
-  // Auto-decode year whenever VIN changes (if year is empty)
-  useEffect(() => {
-    if (loading) return;
-    if (form.vin.length === 17 && !form.year) {
-      const derived = vinToYear(form.vin);
-      if (derived) {
-        setForm((prev) => ({ ...prev, year: derived }));
-      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
-  }, [form.vin, form.year, loading]);
-
-  const updateField = useCallback(<K extends keyof FormData>(key: K, value: FormData[K]) => {
-    setForm((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const updateField = (field: keyof FormData, value: string) => {
+    setForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleConfirm = () => {
+    const cleaned: ParsedDisc = {
+      make: form.make.trim().toUpperCase(),
+      model: form.model.trim(),
+      year: form.year.trim() || (form.vin ? vinToYear(form.vin) : ""),
+      vin: form.vin.trim().toUpperCase(),
+      registrationNumber: form.registrationNumber.trim().toUpperCase(),
+      colour: form.colour.trim(),
+      bodyType: form.bodyType.trim(),
+      raw: parsed?.raw || "[MANUAL]",
+    };
+    try {
+      sessionStorage.setItem(STORAGE_KEY_PARSED, JSON.stringify(cleaned));
+    } catch {}
+    router.push("/assessments/new/damage");
+  };
+
+  const hasRequired = form.vin.length === 17 && form.registrationNumber.length > 0;
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center text-white/40 font-mono text-xs uppercase tracking-wider">
-        Loading...
+      <div className="min-h-screen bg-bg flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-gold/30 border-t-gold animate-spin" />
       </div>
     );
   }
 
-  const methodLabel = parseMethod.startsWith("vision")
-    ? "AI Vision"
-    : parseMethod === "pdf417"
-    ? "Barcode"
-    : "";
-
   return (
-    <div className="min-h-screen bg-bg text-white pb-36">
-      <div className="px-4 py-3 border-b border-border flex items-center gap-3 safe-top sticky top-0 bg-bg/95 backdrop-blur-sm z-10">
-        <button
-          onClick={() => router.back()}
-          className="haptic-tap text-white/60 hover:text-white text-sm"
-        >
-          â† Back
+    <div className="min-h-screen bg-bg text-white flex flex-col">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-3 safe-top">
+        <button onClick={() => router.back()} className="haptic-tap text-white/60 hover:text-white text-sm">
+          ← Back
         </button>
         <div className="flex-1" />
         <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">
-          Step 2 of 5 Â· Vehicle
+          Step 2 of 5 · Vehicle
         </div>
       </div>
 
-      <div className="px-4 pt-6 max-w-md mx-auto">
+      <div className="flex-1 px-4 py-5 max-w-md mx-auto w-full overflow-y-auto">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-gold mb-2">
+          Confirm vehicle details
+        </div>
+        <h1 className="font-display text-2xl font-bold mb-1">Vehicle</h1>
+        <p className="text-sm text-white/60 mb-5">
+          Tap any field&apos;s mic to voice-fill. Tap the field to type.
+        </p>
+
+        {/* Status banner */}
         {parsed ? (
-          <div className="mb-5 bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
-            <div className="w-8 h-8 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="3">
-                <path d="M5 12l5 5L20 7" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <div className="font-display font-semibold flex items-center gap-2">
-                Disc read
-                {methodLabel && (
-                  <span className="text-[9px] font-mono uppercase tracking-wider bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded">
-                    {methodLabel}
-                  </span>
-                )}
-              </div>
-              <div className="text-xs text-white/60 mt-0.5">
-                Check details Â· tap mic to dictate
-              </div>
+          <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 mb-4 flex items-start gap-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="mt-0.5 shrink-0">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+            <div className="text-xs text-emerald-300/90">
+              <div className="font-semibold mb-0.5">Decoded from {method.includes("voice") ? "voice VIN" : "disc"}</div>
+              <div className="text-emerald-300/60">Empty fields = data not available. Voice or type to fill.</div>
             </div>
           </div>
         ) : (
-          <div className="mb-5 bg-amber-500/10 border border-amber-500/30 rounded-xl p-4 flex items-start gap-3 animate-fade-in">
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 flex items-center justify-center flex-shrink-0">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#F59E0B" strokeWidth="2.5">
-                <path d="M12 8v4M12 16h.01" strokeLinecap="round" />
-              </svg>
-            </div>
-            <div className="flex-1">
-              <div className="font-display font-semibold">
-                {isManual ? "Manual entry" : "No disc data"}
-              </div>
-              <div className="text-xs text-white/60 mt-0.5">Type or tap mic to dictate</div>
-            </div>
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 mb-4 text-xs text-amber-300">
+            {isManual ? "Manual entry mode" : "No data — fill in details"}
           </div>
         )}
 
         <div className="space-y-3">
-          <VoiceField
-            label="Make"
-            value={form.make}
-            onChange={(v) => updateField("make", v.toUpperCase())}
-            uppercase
-          />
-
-          <VoiceField
-            label="Model"
-            value={form.model}
-            onChange={(v) => updateField("model", v)}
-          />
+          <VoiceField label="Make" value={form.make} onChange={(v) => updateField("make", v.toUpperCase())} uppercase />
+          <VoiceField label="Model" value={form.model} onChange={(v) => updateField("model", v)} />
+          <VoiceField label="Body type" value={form.bodyType} onChange={(v) => updateField("bodyType", v)} />
 
           <div className="grid grid-cols-2 gap-3">
-            <VoiceField
-              label="Year"
-              value={form.year}
-              onChange={(v) => updateField("year", v.replace(/\D/g, "").slice(0, 4))}
-            />
-            <VoiceField
-              label="Colour"
-              value={form.colour}
-              onChange={(v) => updateField("colour", v)}
-            />
+            <VoiceField label="Year" value={form.year} onChange={(v) => updateField("year", v.replace(/\D/g, "").slice(0, 4))} monospace />
+            <VoiceField label="Colour" value={form.colour} onChange={(v) => updateField("colour", v)} />
           </div>
 
-          <VoiceField
-            label="Registration"
-            value={form.registrationNumber}
-            onChange={(v) => updateField("registrationNumber", v.toUpperCase())}
-            uppercase
-          />
-
-          <VoiceField
-            label="VIN / Chassis"
-            value={form.vin}
-            onChange={(v) => updateField("vin", v.toUpperCase().replace(/\s+/g, ""))}
-            uppercase
-          />
+          <VoiceField label="Registration" value={form.registrationNumber} onChange={(v) => updateField("registrationNumber", v.toUpperCase())} uppercase monospace />
+          <VoiceField label="VIN" value={form.vin} onChange={(v) => updateField("vin", v.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 17))} uppercase monospace />
         </div>
-
-        {discImage && (
-          <div className="mt-5 bg-surface border border-border rounded-xl p-4">
-            <div className="text-[10px] font-mono uppercase tracking-wider text-white/40 mb-3">
-              Captured disc
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={discImage} alt="Captured licence disc" className="w-full rounded-lg" />
-          </div>
-        )}
       </div>
 
-      <div className="fixed bottom-0 inset-x-0 bg-bg/95 backdrop-blur-sm border-t border-border safe-bottom z-20">
-        <div className="px-4 py-4 max-w-md mx-auto flex flex-col gap-2">
+      <div className="px-4 py-4 border-t border-border bg-bg safe-bottom">
+        <div className="max-w-md mx-auto">
           <button
-            onClick={() => alert("Next step (damage capture) coming in v0.4")}
+            onClick={handleConfirm}
+            disabled={!hasRequired}
             className="haptic-tap w-full bg-gold text-black font-semibold py-3.5 rounded-xl text-base disabled:opacity-40"
-            disabled={!form.make && !form.registrationNumber && !form.vin}
           >
-            Confirm &amp; continue
+            Confirm &amp; continue →
           </button>
-          <button
-            onClick={() => router.push("/assessments/new")}
-            className="haptic-tap w-full border border-border text-white/70 py-2.5 rounded-xl text-xs"
-          >
-            Rescan disc
-          </button>
+          <div className="text-center text-[10px] font-mono uppercase tracking-wider text-white/30 mt-2">
+            VIN + registration required
+          </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function LoadingFallback() {
-  return (
-    <div className="min-h-screen bg-bg flex items-center justify-center text-white/40 font-mono text-xs uppercase tracking-wider">
-      Loading...
     </div>
   );
 }
 
 export default function VehiclePage() {
   return (
-    <Suspense fallback={<LoadingFallback />}>
+    <Suspense fallback={<div className="min-h-screen bg-bg flex items-center justify-center"><div className="w-8 h-8 rounded-full border-2 border-gold/30 border-t-gold animate-spin" /></div>}>
       <VehicleContent />
     </Suspense>
   );

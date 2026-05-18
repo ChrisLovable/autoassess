@@ -1,6 +1,6 @@
 // lib/disc.ts
-// SA vehicle disc parser + VIN structural decoders.
-// Strict: only returns data we can verify, never guesses.
+// SA disc parser + VIN decoders + body type normalizer.
+// ZERO HALLUCINATION: empty when unknown, never invent.
 
 export type ParsedDisc = {
   make: string;
@@ -9,23 +9,132 @@ export type ParsedDisc = {
   vin: string;
   registrationNumber: string;
   colour: string;
+  bodyType: string;
   raw: string;
 };
 
 // ============================================================
-// VIN Decoders (programmatic, no API, 100% reliable)
+// SA Body Type normalizer
+// ============================================================
+// Maps NHTSA / SA disc body class values to clean SA-friendly terms.
+// Returns the original string title-cased if no match found.
+
+const SA_BODY_TYPES: Record<string, string> = {
+  // Sedans
+  "sedan/saloon": "Sedan",
+  "sedan": "Sedan",
+  "saloon": "Sedan",
+  "sedan (closed top)": "Sedan",
+  "sedan (open top)": "Sedan (Open Top)",
+
+  // Hatchbacks
+  "hatchback/liftback/notchback": "Hatchback",
+  "hatchback": "Hatchback",
+  "hatch back": "Hatchback",
+  "hatchback (3 door)": "Hatchback",
+  "hatchback (5 door)": "Hatchback",
+  "liftback": "Hatchback",
+  "notchback": "Hatchback",
+  "5-door hatchback": "Hatchback",
+  "3-door hatchback": "Hatchback",
+
+  // SUVs / MPVs
+  "sport utility vehicle (suv)/multi-purpose vehicle (mpv)": "SUV",
+  "sport utility vehicle (suv)": "SUV",
+  "sport utility vehicle": "SUV",
+  "sports utility vehicle": "SUV",
+  "suv": "SUV",
+  "multi-purpose vehicle (mpv)": "MPV",
+  "multi-purpose vehicle": "MPV",
+  "mpv": "MPV",
+  "crossover": "SUV",
+
+  // Bakkies (SA term for pickup)
+  "pickup": "Bakkie",
+  "pickup truck": "Bakkie",
+  "light delivery vehicle": "Bakkie",
+  "light delivery vehicle (single cab)": "Bakkie (Single Cab)",
+  "light delivery vehicle (double cab)": "Bakkie (Double Cab)",
+  "single cab": "Bakkie (Single Cab)",
+  "double cab": "Bakkie (Double Cab)",
+  "extra cab": "Bakkie (Extra Cab)",
+  "club cab": "Bakkie (Extra Cab)",
+  "crew cab": "Bakkie (Double Cab)",
+
+  // Coupes
+  "coupe": "Coupe",
+  "coupé": "Coupe",
+  "2 door coupe": "Coupe",
+
+  // Convertibles
+  "convertible/cabriolet": "Convertible",
+  "convertible": "Convertible",
+  "cabriolet": "Convertible",
+  "roadster": "Convertible",
+
+  // Vans
+  "van": "Van",
+  "minivan": "Van",
+  "panel van": "Panel Van",
+  "cargo van": "Panel Van",
+  "passenger van": "Van",
+
+  // Wagons
+  "wagon": "Wagon",
+  "station wagon": "Wagon",
+  "estate": "Wagon",
+  "estate wagon": "Wagon",
+
+  // Buses
+  "mini bus": "Mini Bus",
+  "minibus": "Mini Bus",
+  "bus": "Bus",
+
+  // Motorcycles (just in case)
+  "motorcycle": "Motorcycle",
+  "scooter": "Scooter",
+};
+
+/**
+ * Normalize a body type string (from NHTSA or SA disc) to a clean SA term.
+ * Returns empty string if input is empty/unknown.
+ * Returns input title-cased if no exact mapping but input has content.
+ */
+export function normalizeBodyType(raw: string): string {
+  if (!raw) return "";
+  const cleaned = raw.toLowerCase().trim();
+
+  // Skip NHTSA "Not Applicable" type values
+  if (/^not applicable$/i.test(cleaned)) return "";
+  if (/^n\/?a$/i.test(cleaned)) return "";
+  if (/^unknown$/i.test(cleaned)) return "";
+
+  // Exact match
+  if (SA_BODY_TYPES[cleaned]) return SA_BODY_TYPES[cleaned];
+
+  // Partial match — find first SA body type whose key appears in the input
+  for (const [key, value] of Object.entries(SA_BODY_TYPES)) {
+    if (key.length >= 4 && cleaned.includes(key)) return value;
+  }
+
+  // No mapping — return title-cased version of input
+  return raw
+    .trim()
+    .split(/\s+/)
+    .map((w) => (w.length > 0 ? w[0].toUpperCase() + w.slice(1).toLowerCase() : ""))
+    .join(" ");
+}
+
+// ============================================================
+// VIN Decoders (programmatic, deterministic)
 // ============================================================
 
-// World Manufacturer Identifier (WMI) → Make
-// Covers makes common in the SA market.
-// First 3 chars of VIN. Source: ISO 3780 + manufacturer registrations.
 const WMI_TO_MAKE: Record<string, string> = {
   // South Africa
   AAV: "VOLKSWAGEN", AFA: "FORD",
-  AHT: "TOYOTA", AHH: "TOYOTA", // Toyota SA (Hilux, Fortuner, Corolla)
+  AHT: "TOYOTA", AHH: "TOYOTA",
   ADM: "GENERAL MOTORS", ADD: "MERCEDES-BENZ",
   MAJ: "FORD", MAK: "MAHINDRA",
-
   // Japan
   JT1: "TOYOTA", JT2: "TOYOTA", JT3: "TOYOTA", JT4: "TOYOTA",
   JT5: "TOYOTA", JT6: "TOYOTA", JT7: "TOYOTA",
@@ -40,14 +149,12 @@ const WMI_TO_MAKE: Record<string, string> = {
   JS1: "SUZUKI", JS2: "SUZUKI", JS3: "SUZUKI", JSA: "SUZUKI",
   JAA: "ISUZU", JAB: "ISUZU", JAC: "ISUZU", JAL: "ISUZU",
   JMY: "MITSUBISHI", JMB: "MITSUBISHI", JA3: "MITSUBISHI", JA4: "MITSUBISHI",
-
   // Korea
   KMH: "HYUNDAI", KMF: "HYUNDAI", KMJ: "HYUNDAI", KMX: "HYUNDAI",
   KMY: "HYUNDAI", KM8: "HYUNDAI",
   KNA: "KIA", KND: "KIA", KNE: "KIA", KNF: "KIA",
   KLA: "DAEWOO", KLP: "DAEWOO", KLY: "DAEWOO",
   KL1: "GM KOREA",
-
   // Germany
   WAU: "AUDI", WA1: "AUDI", WUA: "AUDI",
   WBA: "BMW", WBS: "BMW", WBW: "BMW", WBY: "BMW", WBX: "BMW",
@@ -56,33 +163,25 @@ const WMI_TO_MAKE: Record<string, string> = {
   WV1: "VOLKSWAGEN", WV2: "VOLKSWAGEN", WV3: "VOLKSWAGEN",
   WVG: "VOLKSWAGEN", WVW: "VOLKSWAGEN", WV9: "VOLKSWAGEN",
   WP0: "PORSCHE", WP1: "PORSCHE",
-
   // Italy
   ZFA: "FIAT", ZFC: "FIAT", ZFF: "FERRARI",
   ZAR: "ALFA ROMEO", ZAM: "MASERATI",
-
   // UK
   SAJ: "JAGUAR", SAL: "LAND ROVER", SAR: "ROVER",
   SCA: "ROLLS-ROYCE", SCB: "BENTLEY", SCC: "LOTUS",
-
   // France
   VF1: "RENAULT", VF2: "RENAULT", VF8: "MATRA",
   VF3: "PEUGEOT", VF7: "CITROEN",
   VF9: "BUGATTI",
-
   // Sweden
   YS3: "SAAB", YV1: "VOLVO",
-
   // China
   LFV: "VOLKSWAGEN CHINA", LSV: "VOLVO CHINA",
   LDC: "DONGFENG", LJV: "JAC", LFP: "FAW",
   LJ4: "BYD", LJ2: "BYD",
-
   // India
   MAH: "MAHINDRA", MA1: "MAHINDRA",
-  MAT: "TATA", MAJ: "FORD INDIA",
-  MA3: "SUZUKI INDIA",
-
+  MAT: "TATA", MA3: "SUZUKI INDIA",
   // USA
   "1FA": "FORD", "1FB": "FORD", "1FC": "FORD", "1FD": "FORD",
   "1FM": "FORD", "1FT": "FORD",
@@ -92,18 +191,10 @@ const WMI_TO_MAKE: Record<string, string> = {
   "1HG": "HONDA USA", "1J4": "JEEP",
 };
 
-/**
- * Get vehicle make from a VIN's first 3 characters (WMI).
- * Returns empty string if WMI is unknown.
- */
 export function vinToMake(vin: string): string {
   if (!vin || vin.length < 3) return "";
   return WMI_TO_MAKE[vin.substring(0, 3).toUpperCase()] || "";
 }
-
-// ============================================================
-// VIN Year (ISO 3779 - position 10, disambiguated by position 7)
-// ============================================================
 
 const VIN_YEAR_CODES: Record<string, [number, number]> = {
   A: [1980, 2010], B: [1981, 2011], C: [1982, 2012], D: [1983, 2013],
@@ -128,10 +219,6 @@ export function vinToYear(vin: string): string {
   return String(isOlderCycle ? codes[0] : codes[1]);
 }
 
-// ============================================================
-// VIN Country (from WMI first 2 chars)
-// ============================================================
-
 export function vinToCountry(vin: string): string {
   if (!vin || vin.length < 2) return "";
   const prefix = vin.substring(0, 2).toUpperCase();
@@ -144,7 +231,6 @@ export function vinToCountry(vin: string): string {
     ["SA", "SM", "United Kingdom"],
     ["VF", "VR", "France"],
     ["WA", "W0", "Germany"],
-    ["YA", "YE", "Belgium"],
     ["YS", "YV", "Sweden"],
     ["ZA", "ZR", "Italy"],
     ["1A", "10", "United States"],
@@ -157,7 +243,7 @@ export function vinToCountry(vin: string): string {
 }
 
 // ============================================================
-// SA Licence Disc PDF417 parser (fast-path)
+// SA Disc PDF417 parser
 // ============================================================
 
 export function parseSADisc(rawText: string): ParsedDisc | null {
@@ -176,6 +262,7 @@ export function parseSADisc(rawText: string): ParsedDisc | null {
     vin,
     registrationNumber: fields[3] || "",
     colour: fields[10] || "",
+    bodyType: normalizeBodyType(fields[5] || ""),
     raw: "[PDF417]",
   };
 
@@ -190,5 +277,6 @@ export const MOCK_PARSED_DISC: ParsedDisc = {
   vin: "AHTBB3CD500123456",
   registrationNumber: "CA 487 654",
   colour: "Silver",
+  bodyType: "Bakkie (Double Cab)",
   raw: "[MOCK]",
 };

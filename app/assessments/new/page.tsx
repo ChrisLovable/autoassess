@@ -15,22 +15,14 @@ type Status =
   | "decoded"
   | "error";
 
-/**
- * Light VIN sanity check â€” exactly 17 chars, valid alphabet (no I/O/Q).
- */
 function isValidVinFormat(vin: string): boolean {
   if (vin.length !== 17) return false;
   return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin);
 }
 
-/**
- * Normalize voice transcript into a VIN candidate.
- * Strips spaces, dashes, common phonetic words; uppercases; replaces ambiguous chars.
- */
 function normalizeVinTranscript(text: string): string {
   let v = text.toUpperCase();
 
-  // Strip NATO phonetic words if user speaks them
   const nato: Record<string, string> = {
     ALPHA: "A", BRAVO: "B", CHARLIE: "C", DELTA: "D",
     ECHO: "E", FOXTROT: "F", GOLF: "G", HOTEL: "H",
@@ -43,23 +35,16 @@ function normalizeVinTranscript(text: string): string {
     FIVE: "5", SIX: "6", SEVEN: "7", EIGHT: "8", NINE: "9",
   };
 
-  // Replace whole-word NATO mentions first
   for (const [word, letter] of Object.entries(nato)) {
     v = v.replace(new RegExp(`\\b${word}\\b`, "g"), letter);
   }
-
-  // Strip everything that isn't VIN-valid
   v = v.replace(/[^A-Z0-9]/g, "");
-
-  // Replace VIN-illegal chars with closest valid equivalents
   v = v.replace(/I/g, "1").replace(/O/g, "0").replace(/Q/g, "0");
-
   return v;
 }
 
 export default function VinEntryPage() {
   const router = useRouter();
-
   const [status, setStatus] = useState<Status>("idle");
   const [vin, setVin] = useState("");
   const [rawTranscript, setRawTranscript] = useState("");
@@ -131,7 +116,6 @@ export default function VinEntryPage() {
         try {
           const formData = new FormData();
           formData.append("audio", audioBlob, "vin.webm");
-
           const response = await fetch("/api/transcribe", { method: "POST", body: formData });
           const result = (await response.json()) as { text?: string; error?: string };
 
@@ -221,6 +205,7 @@ export default function VinEntryPage() {
         vin,
         registrationNumber: "",
         colour: "",
+        bodyType: result.bodyType || "",
         raw: "[VIN_VOICE]",
       };
 
@@ -248,15 +233,12 @@ export default function VinEntryPage() {
   return (
     <div className="min-h-screen bg-bg text-white flex flex-col">
       <div className="px-4 py-3 border-b border-border flex items-center gap-3 safe-top">
-        <button
-          onClick={() => router.back()}
-          className="haptic-tap text-white/60 hover:text-white text-sm"
-        >
-          â† Back
+        <button onClick={() => router.back()} className="haptic-tap text-white/60 hover:text-white text-sm">
+          ← Back
         </button>
         <div className="flex-1" />
         <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">
-          Step 1 of 5 Â· VIN
+          Step 1 of 5 · VIN
         </div>
       </div>
 
@@ -266,10 +248,9 @@ export default function VinEntryPage() {
         </div>
         <h1 className="font-display text-2xl font-bold mb-2">Speak the VIN</h1>
         <p className="text-sm text-white/60 mb-8">
-          17 characters from the licence disc. We&apos;ll look up make, model, and year automatically.
+          17 characters from the licence disc. We&apos;ll look up make, model, year and body type.
         </p>
 
-        {/* Big mic button */}
         <div className="flex flex-col items-center mb-8">
           <button
             onClick={toggleRecording}
@@ -299,17 +280,16 @@ export default function VinEntryPage() {
             )}
           </button>
           <div className="mt-4 text-xs font-mono uppercase tracking-wider text-center">
-            {status === "recording" && <span className="text-red-400">â— Recording â€” tap to stop</span>}
+            {status === "recording" && <span className="text-red-400">● Recording — tap to stop</span>}
             {status === "transcribing" && <span className="text-gold">Transcribing</span>}
             {status === "decoding" && <span className="text-gold">Decoding VIN</span>}
-            {status === "decoded" && <span className="text-emerald-400">âœ“ Vehicle identified</span>}
+            {status === "decoded" && <span className="text-emerald-400">✓ Vehicle identified</span>}
             {(status === "idle" || status === "error") && (
               <span className="text-white/40">Tap to speak the VIN</span>
             )}
           </div>
         </div>
 
-        {/* VIN display + manual edit */}
         <div className="bg-surface border border-border rounded-xl p-4 mb-4">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[10px] font-mono uppercase tracking-wider text-white/40">VIN</div>
@@ -323,7 +303,7 @@ export default function VinEntryPage() {
             type="text"
             value={vin}
             onChange={(e) => handleVinChange(e.target.value)}
-            className="w-full bg-transparent border-none outline-none font-mono text-lg text-white placeholder:text-white/30 tracking-wider"
+            className="w-full bg-transparent border-none outline-none font-mono text-lg text-white tracking-wider"
             autoCorrect="off"
             autoCapitalize="characters"
             maxLength={17}
@@ -338,14 +318,12 @@ export default function VinEntryPage() {
           )}
         </div>
 
-        {/* Error display */}
         {errorMsg && (
           <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-3 mb-4 text-sm text-red-300">
             {errorMsg}
           </div>
         )}
 
-        {/* Help text */}
         <div className="bg-surface/50 border border-border/50 rounded-xl p-3 mb-4 text-xs text-white/50">
           <div className="font-mono uppercase tracking-wider text-white/40 mb-1 text-[9px]">
             Tip
@@ -356,7 +334,6 @@ export default function VinEntryPage() {
         </div>
       </div>
 
-      {/* Bottom action bar */}
       <div className="px-4 py-4 border-t border-border bg-bg safe-bottom">
         <div className="max-w-md mx-auto flex flex-col gap-2">
           <button

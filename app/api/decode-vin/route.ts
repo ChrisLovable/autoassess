@@ -2,14 +2,16 @@
 //
 // POST: { vin: "KMHBT51DR6U547402" } → { make, model, year, bodyType, country }
 //
-// NO LLM CALLS. Uses only:
-//   1. Programmatic decoding (WMI lookup + ISO position 10 year)
-//   2. NHTSA Vehicle API (free US government service with manufacturer-submitted data)
+// ZERO HALLUCINATION sources:
+//   1. Programmatic WMI lookup (make)
+//   2. ISO position 10 (year)
+//   3. WMI prefix (country)
+//   4. NHTSA Vehicle API (model, body type — manufacturer-submitted)
 //
-// If NHTSA doesn't know a field, we leave it BLANK. We never guess.
+// If a source returns nothing, the field stays EMPTY. We never guess.
 
 import { NextRequest, NextResponse } from "next/server";
-import { vinToMake, vinToYear, vinToCountry } from "@/lib/disc";
+import { vinToMake, vinToYear, vinToCountry, normalizeBodyType } from "@/lib/disc";
 
 export const maxDuration = 10;
 
@@ -63,37 +65,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // STEP 1: Programmatic decode — 100% reliable, instant, free
+    // Programmatic decoding (deterministic)
     const programmaticMake = vinToMake(cleanVin);
     const programmaticYear = vinToYear(cleanVin);
     const programmaticCountry = vinToCountry(cleanVin);
 
-    // STEP 2: NHTSA decode — free, manufacturer-submitted data
+    // NHTSA decoding (free, manufacturer-submitted)
     const nhtsa = await tryNhtsaDecode(cleanVin);
 
-    // Merge results: NHTSA preferred where available, programmatic as fallback.
-    // If neither has it, leave it BLANK. We never guess.
+    // Merge — programmatic preferred where authoritative; NHTSA fills gaps
     const make =
       programmaticMake ||
       (nhtsa?.Make ? nhtsa.Make.toUpperCase() : "") ||
       (nhtsa?.Manufacturer ? nhtsa.Manufacturer.toUpperCase() : "");
 
-    // Model only comes from NHTSA — programmatic decode can't reliably give model.
-    // Trust NHTSA only when it's not a generic placeholder like "Not Applicable".
+    // Model: NHTSA only (programmatic can't reliably give model)
     let model = "";
     if (nhtsa?.Model && !/^not applicable$/i.test(nhtsa.Model)) {
       model = nhtsa.Model;
     }
 
-    let bodyType = "";
-    if (nhtsa?.BodyClass && !/^not applicable$/i.test(nhtsa.BodyClass)) {
-      bodyType = nhtsa.BodyClass;
-    }
+    // Body type: normalize NHTSA's BodyClass to SA terms
+    const bodyType = normalizeBodyType(nhtsa?.BodyClass || "");
 
     const year = programmaticYear || nhtsa?.ModelYear || "";
     const country = programmaticCountry || nhtsa?.PlantCountry || "";
 
-    // Confidence reflects how much real data we got
     const filledFields = [make, model, year, bodyType, country].filter(Boolean).length;
     let confidence: "high" | "medium" | "low" = "low";
     if (filledFields >= 4) confidence = "high";
@@ -109,7 +106,11 @@ export async function POST(req: NextRequest) {
       country,
       confidence,
       sources: {
-        programmatic: { make: !!programmaticMake, year: !!programmaticYear, country: !!programmaticCountry },
+        programmatic: {
+          make: !!programmaticMake,
+          year: !!programmaticYear,
+          country: !!programmaticCountry,
+        },
         nhtsa: nhtsa ? { ok: !nhtsa.ErrorText, raw: nhtsa.ErrorText || null } : { ok: false },
       },
     });
