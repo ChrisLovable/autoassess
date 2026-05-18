@@ -58,15 +58,15 @@ export default function ScanPage() {
   }, []);
 
   // ============================================================
-  // Handle PDF417 decode success → enrich via NHTSA → navigate
+  // Handle PDF417 decode success â†’ enrich via NHTSA â†’ navigate
   // ============================================================
   const handleDecode = useCallback(async (rawText: string) => {
     if (decodedRef.current) return;
 
     const parsed = parseSADisc(rawText);
     if (!parsed) {
-      // Got a PDF417 but it's not an SA disc — keep scanning
-      setHint("Not a SA licence disc — try again");
+      // Got a PDF417 but it's not an SA disc â€” keep scanning
+      setHint("Not a SA licence disc â€” try again");
       setTimeout(() => setHint(""), 2000);
       return;
     }
@@ -98,7 +98,7 @@ export default function ScanPage() {
         }
       }
     } catch {
-      // NHTSA failed — proceed with disc data only
+      // NHTSA failed â€” proceed with disc data only
     }
 
     const merged: ParsedDisc = {
@@ -155,7 +155,7 @@ export default function ScanPage() {
       setState("scanning");
 
       // Continuous scan on the existing video element
-      reader.decodeFromVideoElement(videoRef.current, (result) => {
+      reader.decodeFromStream(stream, videoRef.current, (result) => {
         if (result) {
           const text = result.getText();
           handleDecode(text);
@@ -225,11 +225,11 @@ export default function ScanPage() {
       setScanElapsed(elapsed);
 
       if (brightness < DARK_THRESHOLD) {
-        setHint(torchAvailable ? "Too dark — tap torch" : "Too dark — find more light");
+        setHint(torchAvailable ? "Too dark â€” tap torch" : "Too dark â€” find more light");
       } else if (brightness > BRIGHT_THRESHOLD) {
-        setHint("Too bright — move from direct light/glare");
+        setHint("Too bright â€” move from direct light/glare");
       } else if (elapsed > 6) {
-        setHint("Move closer · fill the box · hold steady");
+        setHint("Move closer Â· fill the box Â· hold steady");
       } else if (elapsed > 3) {
         setHint("Align disc barcode in the box");
       } else {
@@ -266,7 +266,7 @@ export default function ScanPage() {
           </svg>
         </button>
         <div className="font-mono text-[10px] uppercase tracking-wider text-white/70 bg-black/40 backdrop-blur-sm rounded-full px-3 py-1.5">
-          Disc Scan · PDF417
+          Disc Scan Â· PDF417
         </div>
         {torchAvailable ? (
           <button
@@ -346,7 +346,7 @@ export default function ScanPage() {
           {state === "scanning" && (
             <>
               <div className="text-center text-xs text-white/70 mb-3 leading-relaxed">
-                Hold the phone 15–20cm from the barcode strip.<br />
+                Hold the phone 15â€“20cm from the barcode strip.<br />
                 Fill the gold box with just the barcode.
               </div>
               {scanElapsed >= FALLBACK_AFTER_SECONDS && (
@@ -354,7 +354,7 @@ export default function ScanPage() {
                   onClick={() => { cleanup(); router.push("/assessments/new/vin"); }}
                   className="haptic-tap w-full bg-black/60 backdrop-blur-sm border border-white/30 text-white py-3 rounded-xl text-sm font-medium"
                 >
-                  Trouble scanning? Switch to Voice VIN →
+                  Trouble scanning? Switch to Voice VIN â†’
                 </button>
               )}
             </>
