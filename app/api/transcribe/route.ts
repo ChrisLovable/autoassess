@@ -1,6 +1,6 @@
 // app/api/transcribe/route.ts
 //
-// POST: multipart/form-data with "audio" file → { text } or { error }
+// POST: multipart/form-data with "audio" file â†’ { text } or { error }
 // Uses ElevenLabs Scribe v1 (English).
 
 import { NextRequest, NextResponse } from "next/server";
@@ -9,9 +9,9 @@ export const maxDuration = 30;
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.ELEVENLABS_API_KEY) {
+    if (!process.env.ELEVEN_LABS_API_KEY) {
       return NextResponse.json(
-        { error: "ELEVENLABS_API_KEY not configured" },
+        { error: "ELEVEN_LABS_API_KEY not configured" },
         { status: 500 }
       );
     }
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Missing audio file" }, { status: 400 });
     }
 
-    // Size guard — reject anything stupid huge (>10 MB)
+    // Size guard â€” reject anything stupid huge (>10 MB)
     if (audioFile.size > 10 * 1024 * 1024) {
       return NextResponse.json({ error: "Audio too large (max 10MB)" }, { status: 413 });
     }
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
     const response = await fetch("https://api.elevenlabs.io/v1/speech-to-text", {
       method: "POST",
       headers: {
-        "xi-api-key": process.env.ELEVENLABS_API_KEY,
+        "xi-api-key": process.env.ELEVEN_LABS_API_KEY,
       },
       body: elevenLabsForm,
     });
