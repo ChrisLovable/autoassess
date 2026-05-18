@@ -63,7 +63,7 @@ export default function DiscScanner() {
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(()=>{});
+        await videoRef.current.play();
       }
       setState('ready');
     } catch (err: unknown) {
