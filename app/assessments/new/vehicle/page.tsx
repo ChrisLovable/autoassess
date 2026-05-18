@@ -30,7 +30,7 @@ const EMPTY_FORM: FormData = {
 };
 
 // ============================================================
-// Voice-enabled field — MediaRecorder + ElevenLabs Scribe
+// Voice-enabled field â€” MediaRecorder + ElevenLabs Scribe
 // ============================================================
 
 type VoiceFieldStatus = "idle" | "recording" | "processing" | "error";
@@ -322,11 +322,11 @@ function VehicleContent() {
           onClick={() => router.back()}
           className="haptic-tap text-white/60 hover:text-white text-sm"
         >
-          ← Back
+          â† Back
         </button>
         <div className="flex-1" />
         <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">
-          Step 2 of 5 · Vehicle
+          Step 2 of 5 Â· Vehicle
         </div>
       </div>
 
@@ -348,7 +348,7 @@ function VehicleContent() {
                 )}
               </div>
               <div className="text-xs text-white/60 mt-0.5">
-                Check details · tap mic to dictate
+                Check details Â· tap mic to dictate
               </div>
             </div>
           </div>
@@ -373,7 +373,6 @@ function VehicleContent() {
             label="Make"
             value={form.make}
             onChange={(v) => updateField("make", v.toUpperCase())}
-            placeholder="TOYOTA, HYUNDAI..."
             uppercase
           />
 
@@ -381,7 +380,6 @@ function VehicleContent() {
             label="Model"
             value={form.model}
             onChange={(v) => updateField("model", v)}
-            placeholder="Hilux 2.4 GD-6"
           />
 
           <div className="grid grid-cols-2 gap-3">
@@ -389,13 +387,11 @@ function VehicleContent() {
               label="Year"
               value={form.year}
               onChange={(v) => updateField("year", v.replace(/\D/g, "").slice(0, 4))}
-              placeholder="2022"
             />
             <VoiceField
               label="Colour"
               value={form.colour}
               onChange={(v) => updateField("colour", v)}
-              placeholder="Silver"
             />
           </div>
 
@@ -403,7 +399,6 @@ function VehicleContent() {
             label="Registration"
             value={form.registrationNumber}
             onChange={(v) => updateField("registrationNumber", v.toUpperCase())}
-            placeholder="CA 487 654"
             uppercase
           />
 
@@ -411,7 +406,6 @@ function VehicleContent() {
             label="VIN / Chassis"
             value={form.vin}
             onChange={(v) => updateField("vin", v.toUpperCase().replace(/\s+/g, ""))}
-            placeholder="KMHBT51DR6U547402"
             uppercase
           />
         </div>

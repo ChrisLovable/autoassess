@@ -1,6 +1,6 @@
 // app/api/decode-vin/route.ts
 //
-// POST: { vin: "KMHBT51DR6U547402" } → { make, model, year, bodyType, country, confidence }
+// POST: { vin: "KMHBT51DR6U547402" } â†’ { make, model, year, bodyType, country, confidence }
 //
 // Uses Claude with tool_use for structured VIN decoding.
 // Combines programmatic decoding (year from position 10, country from WMI)
@@ -19,7 +19,7 @@ const anthropic = new Anthropic({
 const SYSTEM_PROMPT = `You are an expert in vehicle identification numbers (VINs).
 Given a 17-character VIN, decode the vehicle details using:
 - World Manufacturer Identifier (WMI): positions 1-3
-- Vehicle Descriptor Section (VDS): positions 4-8 — model, body type, engine
+- Vehicle Descriptor Section (VDS): positions 4-8 â€” model, body type, engine
 - Position 10: model year code
 - Position 11: assembly plant
 - Position 12-17: serial number
@@ -30,7 +30,7 @@ Use your knowledge of manufacturer-specific VIN patterns. Common SA vehicles inc
 - Hyundai Korean WMI: KMH
 
 If you're confident about a field, fill it in. If uncertain, return an empty string.
-NEVER invent or guess specific model trims you're not sure about — better to leave model partial than wrong.`;
+NEVER invent or guess specific model trims you're not sure about â€” better to leave model partial than wrong.`;
 
 const DECODE_TOOL = {
   name: "decode_vin",

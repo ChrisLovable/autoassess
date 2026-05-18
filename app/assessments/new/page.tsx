@@ -16,7 +16,7 @@ type Status =
   | "error";
 
 /**
- * Light VIN sanity check — exactly 17 chars, valid alphabet (no I/O/Q).
+ * Light VIN sanity check â€” exactly 17 chars, valid alphabet (no I/O/Q).
  */
 function isValidVinFormat(vin: string): boolean {
   if (vin.length !== 17) return false;
@@ -252,11 +252,11 @@ export default function VinEntryPage() {
           onClick={() => router.back()}
           className="haptic-tap text-white/60 hover:text-white text-sm"
         >
-          ← Back
+          â† Back
         </button>
         <div className="flex-1" />
         <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">
-          Step 1 of 5 · VIN
+          Step 1 of 5 Â· VIN
         </div>
       </div>
 
@@ -299,10 +299,10 @@ export default function VinEntryPage() {
             )}
           </button>
           <div className="mt-4 text-xs font-mono uppercase tracking-wider text-center">
-            {status === "recording" && <span className="text-red-400">● Recording — tap to stop</span>}
+            {status === "recording" && <span className="text-red-400">â— Recording â€” tap to stop</span>}
             {status === "transcribing" && <span className="text-gold">Transcribing</span>}
             {status === "decoding" && <span className="text-gold">Decoding VIN</span>}
-            {status === "decoded" && <span className="text-emerald-400">✓ Vehicle identified</span>}
+            {status === "decoded" && <span className="text-emerald-400">âœ“ Vehicle identified</span>}
             {(status === "idle" || status === "error") && (
               <span className="text-white/40">Tap to speak the VIN</span>
             )}
@@ -323,7 +323,6 @@ export default function VinEntryPage() {
             type="text"
             value={vin}
             onChange={(e) => handleVinChange(e.target.value)}
-            placeholder="KMHBT51DR6U547402"
             className="w-full bg-transparent border-none outline-none font-mono text-lg text-white placeholder:text-white/30 tracking-wider"
             autoCorrect="off"
             autoCapitalize="characters"
