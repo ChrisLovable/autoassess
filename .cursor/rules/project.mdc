@@ -1,0 +1,102 @@
+---
+description: AutoAssess project conventions — always applied
+alwaysApply: true
+---
+
+# AutoAssess — project context
+
+AutoAssess is a mobile-first damage assessment app for South African panel beaters.
+The primary user is an assessor at a panel beating workshop. Workflow:
+1. Scan SA vehicle licence disc (PDF417 barcode) → auto-fill vehicle details
+2. Capture damage photos
+3. AI analyses photos → structured damage report
+4. Assessor reviews / edits
+5. Generate branded PDF quote
+6. Send to customer via WhatsApp / email
+7. Voice-driven revisions during dismantle (versioned quotes)
+
+## Tech stack — non-negotiable
+
+- **Framework:** Next.js 14+ App Router (no Pages Router)
+- **Language:** TypeScript strict mode, no `any` unless absolutely justified
+- **Styling:** Tailwind CSS only (no styled-components, no CSS-in-JS, no separate .module.css)
+- **DB / auth / storage:** Supabase (Postgres + RLS + Storage + Auth)
+- **AI:** Anthropic Claude Sonnet 4 Vision via `@anthropic-ai/sdk`
+- **Barcode:** `@zxing/library` for PDF417
+- **Validation:** Zod schemas for every API boundary
+- **Deploy:** Vercel (web), Render (heavy background jobs)
+- **Icons:** Inline SVG components in `components/ui/Icons.tsx`. Do NOT add `lucide-react` icons unless asked — keep the icon set lean.
+
+## Brand & design tokens
+
+| Token | Value | Tailwind |
+|---|---|---|
+| Background | `#0A0A0A` | `bg-bg` |
+| Surface | `#141414` | `bg-surface` |
+| Surface alt | `#1C1C1C` | `bg-surface-2` |
+| Surface deep | `#262626` | `bg-surface-3` |
+| Border | `#2A2A2A` | `border-border` |
+| Border strong | `#3A3A3A` | `border-border-strong` |
+| Gold accent | `#D4AF37` | `bg-gold` / `text-gold` |
+| Gold hover | `#E6C04A` | `bg-gold-hover` |
+
+Fonts (defined in `app/layout.tsx`):
+- Display: Bricolage Grotesque (`font-display`)
+- Body: Geist (`font-sans`)
+- Monospace: Geist Mono (`font-mono`)
+
+Always use `font-display` for headings, `font-mono` for technical labels (registration numbers, VINs, codes, timestamps).
+
+## Code quality — production standard
+
+This codebase must withstand thousands of concurrent users. Reject all shortcuts:
+
+- **No silent failures.** Every async call has try/catch with meaningful error messages.
+- **No truncation for cost.** Pass full content to AI. Never reduce fidelity to save money.
+- **No `any`.** Use proper types or unknown + narrow.
+- **No premature optimisation, but no obvious anti-patterns.**
+- **Mobile-first.** Default styles target 390px viewport, scale up with `sm:` / `md:`.
+- **Accessibility.** Buttons need `aria-label` when icon-only. Images need `alt`. Form fields need `<label>`.
+- **No emoji in code.** Use named SVG icons instead.
+
+## File & folder conventions
+
+```
+app/                    # Next.js App Router pages
+  page.tsx              # Home
+  layout.tsx            # Root layout
+  globals.css           # Tailwind directives + tokens
+  api/                  # API route handlers
+  [resource]/           # Resource pages (assessments, vehicles, etc.)
+    page.tsx
+    [id]/page.tsx
+components/             # Reusable React components
+  ui/                   # Shared atomic components (Icons, Button, Input)
+  [Feature].tsx         # Feature-level components
+lib/                    # Pure utility modules
+  supabase/             # Supabase clients (server.ts, client.ts)
+  schemas/              # Zod schemas
+  prompts/              # AI prompt templates
+  [domain].ts           # Domain helpers (disc, pricing, etc.)
+```
+
+- **Server components by default.** Add `'use client'` only when needed (state, refs, browser APIs).
+- **Client components** end in client-only behaviour — wrap with `<Suspense>` in their parent when using `useSearchParams`.
+- **Co-locate types** with their usage. Shared types go in `lib/types.ts`.
+
+## South African context
+
+- Currency: **ZAR** (R). Format: `R20,777` (comma thousands, no decimal for whole rands).
+- VAT: **15%**.
+- Date format: prefer `2026-05-18` (ISO) for storage, `18 May 2026` for display.
+- Vehicle terminology: **bonnet** (not hood), **boot** (not trunk), **mudguard** (not fender), **windscreen** (not windshield), **number plate** (not licence plate).
+- POPIA compliance: ID numbers stored as SHA-256 hashes only. Personal info access logged.
+- Multi-language support planned: English, Afrikaans, Zulu, Xhosa.
+
+## When generating code
+
+- Match the existing design language (dark + gold, rounded-2xl/3xl, generous padding).
+- Use `haptic-tap` utility class on tappable elements.
+- Use `animate-fade-in` and `animate-slide-up` for entrance animations.
+- Wrap mobile screens in `<main className="min-h-screen max-w-md mx-auto pb-32 safe-top safe-bottom">` pattern.
+- Bottom action bars use the fixed-position gradient pattern (see existing components).

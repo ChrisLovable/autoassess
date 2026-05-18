@@ -1,0 +1,66 @@
+---
+description: Next.js App Router conventions
+globs: app/**/*.tsx, app/**/*.ts
+alwaysApply: false
+---
+
+# Next.js App Router conventions
+
+## Server vs Client components
+
+- Default: **Server Component**. No directive needed.
+- Add `'use client'` ONLY if the component uses:
+  - React hooks (`useState`, `useEffect`, `useRef`, `useReducer`, etc.)
+  - Browser APIs (`navigator`, `window`, `document`, `sessionStorage`)
+  - Event handlers tied to component state
+- Prefer splitting: a server `page.tsx` that mounts a small `'use client'` component, not the entire page as a client component.
+
+## Async patterns
+
+- Server components can be `async function`.
+- `params` and `searchParams` are awaited in Next 15+:
+  ```ts
+  export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+    const { id } = await params;
+    // ...
+  }
+  ```
+- API routes use `Request` / `NextRequest` and return `Response` / `NextResponse.json()`.
+
+## Suspense boundaries
+
+- `useSearchParams()` requires a `<Suspense>` boundary parent — wrap the page in it (see `app/assessments/new/vehicle/page.tsx` for the pattern).
+
+## Metadata
+
+- Export `metadata: Metadata` and `viewport: Viewport` from page or layout files.
+- Don't put metadata in client components — it'll be ignored.
+
+## Routing
+
+- `app/foo/page.tsx` → `/foo`
+- `app/foo/[id]/page.tsx` → `/foo/:id`
+- `app/foo/(group)/bar/page.tsx` → `/foo/bar` (route grouping, no URL segment)
+- Use `Link` from `next/link` for internal navigation, not `<a>`.
+- Use `useRouter` from `next/navigation` (NOT `next/router` — that's the old Pages Router).
+
+## Forms & mutations
+
+- Prefer Server Actions for form submissions:
+  ```tsx
+  async function handleSubmit(formData: FormData) {
+    'use server';
+    const data = formSchema.parse(Object.fromEntries(formData));
+    // ...
+  }
+  ```
+- For client-side mutations, hit API routes via `fetch('/api/...')`.
+
+## Performance
+
+- Use `dynamic` imports for heavy client-only libraries:
+  ```ts
+  const HeavyComponent = dynamic(() => import('./Heavy'), { ssr: false });
+  ```
+- Use `next/image` for any photo (never raw `<img>`) — exception is dynamic dataURLs from camera capture, which can't go through next/image.
+- Set `export const maxDuration = 60;` on API routes that call Claude (vision calls take 15-30s).

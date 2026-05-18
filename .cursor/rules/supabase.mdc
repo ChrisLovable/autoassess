@@ -1,0 +1,92 @@
+---
+description: Supabase data access patterns
+globs: lib/supabase/**/*.ts, app/api/**/*.ts
+alwaysApply: false
+---
+
+# Supabase conventions
+
+## Client creation
+
+Two distinct clients — use the right one for context:
+
+**Browser / client component:**
+```ts
+// lib/supabase/client.ts
+import { createBrowserClient } from '@supabase/ssr';
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+}
+```
+
+**Server component / route handler / server action:**
+```ts
+// lib/supabase/server.ts
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
+
+export async function createClient() {
+  const cookieStore = await cookies();
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll: () => cookieStore.getAll(),
+        setAll: (toSet) => toSet.forEach(({ name, value, options }) =>
+          cookieStore.set(name, value, options)),
+      },
+    },
+  );
+}
+```
+
+**Admin / service role (server-only):**
+- Use the service role key ONLY in server-side code that needs to bypass RLS.
+- Never expose `SUPABASE_SERVICE_ROLE_KEY` to the browser.
+- Use for: cron jobs, admin actions, AI pipelines that need full access.
+
+## Row Level Security
+
+- **Every table has RLS enabled**, no exceptions.
+- Every table has a `tenant_id` column for multi-tenancy.
+- Use the `current_tenant_id()` helper in policies — see `schema.sql`.
+- Test policies by signing in as different users in dev.
+
+## Type safety
+
+- Generate types: `npx supabase gen types typescript --project-id <ref> > lib/supabase/database.types.ts`
+- Import the `Database` type:
+  ```ts
+  import type { Database } from '@/lib/supabase/database.types';
+  const supabase = createClient<Database>();
+  ```
+
+## Querying
+
+- Always handle the `{ data, error }` return:
+  ```ts
+  const { data, error } = await supabase.from('incidents').select('*').single();
+  if (error) {
+    console.error('Failed to load incident', error);
+    throw error;  // or return appropriate response
+  }
+  ```
+- Use `.single()` when expecting exactly one row, `.maybeSingle()` when zero is OK.
+- Select only the columns you need; don't `select('*')` for production endpoints.
+
+## Storage
+
+- Bucket names: `incident-photos`, `quotes`, `tenant-logos`. All private.
+- Upload paths: `{tenant_id}/{incident_id}/{photo_id}.jpg`
+- Always use signed URLs with short expiry (1 hour) for reading.
+- Strip EXIF GPS data before public sharing; keep it server-side for audit.
+
+## Real-time
+
+- Subscribe via `supabase.channel(...)` for live updates on incidents, photos, quote status.
+- Always `.unsubscribe()` on component unmount.

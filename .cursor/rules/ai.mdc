@@ -1,0 +1,53 @@
+---
+description: Anthropic Claude integration patterns
+globs: app/api/**/*.ts, lib/prompts/**/*.ts, lib/claude.ts
+alwaysApply: false
+---
+
+# Claude (Anthropic) integration
+
+## Model selection
+
+- **Primary:** `claude-sonnet-4-5-20251022` or latest Sonnet 4 — use for all vision analysis and structured damage reports.
+- **Fast / cheap classification:** `claude-haiku-4-5-20251001` — use for simple classification, language detection, short summaries.
+- Never call `claude-3` or older models — they're deprecated for our use case.
+
+## Vision calls
+
+- Resize images to max 2048px longest edge before sending. Vision quality doesn't improve beyond this and you save tokens.
+- Send images as base64 inline, not URLs — protects against URL expiry and CORS.
+- Use **tool use with `tool_choice`** to force valid JSON output (not text parsing):
+  ```ts
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20251022',
+    max_tokens: 4096,
+    tools: [DAMAGE_ANALYSIS_TOOL],
+    tool_choice: { type: 'tool', name: 'analyze_damage' },
+    messages: [{ role: 'user', content: [textBlock, ...imageBlocks] }],
+  });
+  ```
+
+## Prompt versioning
+
+- Every prompt lives in `lib/prompts/[domain].ts` as a const export.
+- Tag prompts with a version: `export const DAMAGE_ANALYSIS_PROMPT_V1 = '...'`
+- Store the version used in the `ai_analyses.prompt_version` column.
+- When you change a prompt meaningfully, bump the version and keep the old one for reproducibility.
+
+## Error handling
+
+- Wrap every Anthropic call in try/catch.
+- On error: log to Sentry/console, set incident status to `review`, persist `ai_error` field, return graceful error to client.
+- Never let an AI failure crash the user flow — they can always proceed manually.
+
+## Cost & rate limiting
+
+- Per-tenant monthly AI spend cap (`tenants.ai_monthly_budget_cents`).
+- Check spend before making the call. If over budget: degrade gracefully (skip AI, allow manual entry).
+- Persist `cost_cents`, `tokens_used`, `latency_ms` in `ai_analyses` for every call. This is critical data for unit economics.
+
+## Quality > cost — non-negotiable
+
+- Never truncate photos, vehicle descriptions, or other input to save tokens.
+- Never use a worse model to save money on production-grade flows.
+- The user (Chris) has explicitly forbidden cost-cutting on input fidelity.
