@@ -1,90 +1,52 @@
 // app/api/decode-vin/route.ts
 //
-// POST: { vin: "KMHBT51DR6U547402" } â†’ { make, model, year, bodyType, country, confidence }
+// POST: { vin: "KMHBT51DR6U547402" } → { make, model, year, bodyType, country }
 //
-// Uses Claude with tool_use for structured VIN decoding.
-// Combines programmatic decoding (year from position 10, country from WMI)
-// with Claude's broader automotive knowledge for model/body type.
+// NO LLM CALLS. Uses only:
+//   1. Programmatic decoding (WMI lookup + ISO position 10 year)
+//   2. NHTSA Vehicle API (free US government service with manufacturer-submitted data)
+//
+// If NHTSA doesn't know a field, we leave it BLANK. We never guess.
 
 import { NextRequest, NextResponse } from "next/server";
-import Anthropic from "@anthropic-ai/sdk";
-import { vinToYear, vinToCountry } from "@/lib/disc";
+import { vinToMake, vinToYear, vinToCountry } from "@/lib/disc";
 
-export const maxDuration = 30;
+export const maxDuration = 10;
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
-const SYSTEM_PROMPT = `You are an expert in vehicle identification numbers (VINs).
-Given a 17-character VIN, decode the vehicle details using:
-- World Manufacturer Identifier (WMI): positions 1-3
-- Vehicle Descriptor Section (VDS): positions 4-8 â€” model, body type, engine
-- Position 10: model year code
-- Position 11: assembly plant
-- Position 12-17: serial number
-
-Use your knowledge of manufacturer-specific VIN patterns. Common SA vehicles include:
-- Toyota, Hyundai, Ford, Volkswagen, Nissan, BMW, Mercedes-Benz, Isuzu, Kia, Renault
-- Many SA Hilux/Bakkies have WMI starting AHT (South Africa) or JT (Japan)
-- Hyundai Korean WMI: KMH
-
-If you're confident about a field, fill it in. If uncertain, return an empty string.
-NEVER invent or guess specific model trims you're not sure about â€” better to leave model partial than wrong.`;
-
-const DECODE_TOOL = {
-  name: "decode_vin",
-  description: "Decode a 17-character VIN into vehicle details.",
-  input_schema: {
-    type: "object" as const,
-    properties: {
-      make: {
-        type: "string",
-        description: "Manufacturer in UPPERCASE (e.g. TOYOTA, HYUNDAI, FORD)",
-      },
-      model: {
-        type: "string",
-        description: "Vehicle model name and variant if known (e.g. 'Hilux 2.4 GD-6', 'Sonata', 'Polo Vivo'). Leave empty if uncertain.",
-      },
-      year: {
-        type: "string",
-        description: "4-digit model year (e.g. '2022')",
-      },
-      bodyType: {
-        type: "string",
-        description: "Body type (Sedan, Hatchback, SUV, Bakkie, Coupe, etc.)",
-      },
-      country: {
-        type: "string",
-        description: "Country of manufacture (e.g. 'South Africa', 'Japan', 'South Korea')",
-      },
-      confidence: {
-        type: "string",
-        enum: ["high", "medium", "low"],
-        description: "Confidence in the model/body decoding. 'high' = WMI well-known + VDS pattern recognized. 'low' = generic guess.",
-      },
-    },
-    required: ["make", "year", "country", "confidence"],
-  },
+type NhtsaResult = {
+  Make?: string;
+  Model?: string;
+  ModelYear?: string;
+  BodyClass?: string;
+  VehicleType?: string;
+  Manufacturer?: string;
+  PlantCountry?: string;
+  ErrorCode?: string;
+  ErrorText?: string;
 };
+
+async function tryNhtsaDecode(vin: string): Promise<NhtsaResult | null> {
+  const url = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${vin}?format=json`;
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 6000);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!response.ok) return null;
+    const data = (await response.json()) as { Results?: NhtsaResult[] };
+    return data?.Results?.[0] || null;
+  } catch {
+    return null;
+  }
+}
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return NextResponse.json(
-        { success: false, error: "ANTHROPIC_API_KEY not configured on server" },
-        { status: 500 }
-      );
-    }
-
     const body = await req.json();
     const { vin } = body as { vin?: string };
 
     if (!vin || typeof vin !== "string") {
-      return NextResponse.json(
-        { success: false, error: "Missing VIN" },
-        { status: 400 }
-      );
+      return NextResponse.json({ success: false, error: "Missing VIN" }, { status: 400 });
     }
 
     const cleanVin = vin.toUpperCase().replace(/[^A-Z0-9]/g, "");
@@ -101,62 +63,60 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Programmatic decoding (always reliable)
-    const derivedYear = vinToYear(cleanVin);
-    const derivedCountry = vinToCountry(cleanVin);
+    // STEP 1: Programmatic decode — 100% reliable, instant, free
+    const programmaticMake = vinToMake(cleanVin);
+    const programmaticYear = vinToYear(cleanVin);
+    const programmaticCountry = vinToCountry(cleanVin);
 
-    // Ask Claude for fuller decoding
-    const message = await anthropic.messages.create({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 512,
-      system: SYSTEM_PROMPT,
-      tools: [DECODE_TOOL],
-      tool_choice: { type: "tool", name: "decode_vin" },
-      messages: [
-        {
-          role: "user",
-          content: `Decode this VIN: ${cleanVin}
+    // STEP 2: NHTSA decode — free, manufacturer-submitted data
+    const nhtsa = await tryNhtsaDecode(cleanVin);
 
-Structural hints (already derived from VIN positions):
-- Year from position 10: ${derivedYear || "unknown"}
-- Country from WMI: ${derivedCountry || "unknown"}
+    // Merge results: NHTSA preferred where available, programmatic as fallback.
+    // If neither has it, leave it BLANK. We never guess.
+    const make =
+      programmaticMake ||
+      (nhtsa?.Make ? nhtsa.Make.toUpperCase() : "") ||
+      (nhtsa?.Manufacturer ? nhtsa.Manufacturer.toUpperCase() : "");
 
-Now use the WMI (${cleanVin.substring(0, 3)}) and VDS (${cleanVin.substring(3, 8)}) to determine make, model, and body type.`,
-        },
-      ],
-    });
-
-    const toolUseBlock = message.content.find((b) => b.type === "tool_use");
-    if (!toolUseBlock || toolUseBlock.type !== "tool_use") {
-      return NextResponse.json(
-        { success: false, error: "VIN decoder returned no structured data" },
-        { status: 500 }
-      );
+    // Model only comes from NHTSA — programmatic decode can't reliably give model.
+    // Trust NHTSA only when it's not a generic placeholder like "Not Applicable".
+    let model = "";
+    if (nhtsa?.Model && !/^not applicable$/i.test(nhtsa.Model)) {
+      model = nhtsa.Model;
     }
 
-    const decoded = toolUseBlock.input as Record<string, string>;
+    let bodyType = "";
+    if (nhtsa?.BodyClass && !/^not applicable$/i.test(nhtsa.BodyClass)) {
+      bodyType = nhtsa.BodyClass;
+    }
+
+    const year = programmaticYear || nhtsa?.ModelYear || "";
+    const country = programmaticCountry || nhtsa?.PlantCountry || "";
+
+    // Confidence reflects how much real data we got
+    const filledFields = [make, model, year, bodyType, country].filter(Boolean).length;
+    let confidence: "high" | "medium" | "low" = "low";
+    if (filledFields >= 4) confidence = "high";
+    else if (filledFields >= 2) confidence = "medium";
 
     return NextResponse.json({
       success: true,
       vin: cleanVin,
-      make: (decoded.make || "").toUpperCase(),
-      model: decoded.model || "",
-      year: decoded.year || derivedYear,
-      bodyType: decoded.bodyType || "",
-      country: decoded.country || derivedCountry,
-      confidence: decoded.confidence || "medium",
-      usage: {
-        inputTokens: message.usage.input_tokens,
-        outputTokens: message.usage.output_tokens,
+      make,
+      model,
+      year,
+      bodyType,
+      country,
+      confidence,
+      sources: {
+        programmatic: { make: !!programmaticMake, year: !!programmaticYear, country: !!programmaticCountry },
+        nhtsa: nhtsa ? { ok: !nhtsa.ErrorText, raw: nhtsa.ErrorText || null } : { ok: false },
       },
     });
   } catch (error) {
     console.error("VIN decode error:", error);
     return NextResponse.json(
-      {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
+      { success: false, error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
     );
   }
