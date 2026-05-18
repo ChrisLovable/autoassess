@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ParsedDisc } from "@/lib/disc";
@@ -14,7 +16,7 @@ function MonoField({ label, value }: { label: string; value: string }) {
         {label}
       </div>
       <div className="font-mono text-sm text-white break-all">
-        {value || <span className="text-white/30">—</span>}
+        {value || <span className="text-white/30">â€”</span>}
       </div>
     </div>
   );
@@ -38,7 +40,7 @@ export default function VehiclePage() {
       const img = sessionStorage.getItem(STORAGE_KEY_IMAGE);
       if (img) setDiscImage(img);
     } catch {
-      // Storage unavailable — leave as null
+      // Storage unavailable â€” leave as null
     }
     setLoading(false);
   }, []);
@@ -51,7 +53,7 @@ export default function VehiclePage() {
     );
   }
 
-  // If no parsed data and not manual mode → decode failed silently somewhere
+  // If no parsed data and not manual mode â†’ decode failed silently somewhere
   // Show empty form so user can fill in by hand
   const data: Partial<ParsedDisc> = parsed || {};
 
@@ -63,11 +65,11 @@ export default function VehiclePage() {
           onClick={() => router.back()}
           className="haptic-tap text-white/60 hover:text-white text-sm"
         >
-          ← Back
+          â† Back
         </button>
         <div className="flex-1" />
         <div className="font-mono text-[10px] uppercase tracking-wider text-white/40">
-          Step 2 of 5 · Confirm vehicle
+          Step 2 of 5 Â· Confirm vehicle
         </div>
       </div>
 
@@ -124,10 +126,10 @@ export default function VehiclePage() {
             Vehicle
           </div>
           <div className="font-display text-2xl font-bold leading-tight">
-            {data.make || "—"}
+            {data.make || "â€”"}
           </div>
           <div className="font-display text-base text-white/70 mt-1">
-            {data.model || "—"}
+            {data.model || "â€”"}
           </div>
         </div>
 
